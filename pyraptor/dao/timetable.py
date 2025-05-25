@@ -28,7 +28,6 @@ def read_timetable(input_folder: str) -> Timetable:
     logger.debug("Using cached datastructures")
 
     timetable: Timetable = load_joblib("timetable")
-
     return timetable
 
 

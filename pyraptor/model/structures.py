@@ -49,7 +49,6 @@ class Stop:
     id = attr.ib(default=None)
     name = attr.ib(default=None)
     station: Station = attr.ib(default=None)
-    platform_code = attr.ib(default=None)
     index = attr.ib(default=None)
 
     def __hash__(self):
@@ -164,9 +163,9 @@ class Stations:
             return None
         return self.set_idx[station]
 
-    def get_stops(self, station_name):
+    def get_stops(self, station_id):
         """Get all stop ids from station, i.e. platform stop ids belonging to station"""
-        return self.set_idx[station_name].stops
+        return self.set_idx[station_id].stops
 
 
 @attr.s(repr=False)
@@ -218,14 +217,12 @@ class TripStopTimes:
         self.set_idx[(trip_stop_time.trip, trip_stop_time.stopidx)] = trip_stop_time
         self.stop_trip_idx[trip_stop_time.stop].append(trip_stop_time)
 
-    def get_trip_stop_times_in_range(self, stops, dep_secs_min, dep_secs_max):
+    def get_trip_stop_times_in_range(self, stops):
         """Returns all trip stop times with departure time within range"""
         in_window = [
             tst
             for tst in self
-            if tst.dts_dep >= dep_secs_min
-            and tst.dts_dep <= dep_secs_max
-            and tst.stop in stops
+            if tst.stop in stops
         ]
         return in_window
 
@@ -249,7 +246,6 @@ class Trip:
     id = attr.ib(default=None)
     stop_times = attr.ib(default=attr.Factory(list))
     stop_times_index = attr.ib(default=attr.Factory(dict))
-    hint = attr.ib(default=None)
     long_name = attr.ib(default=None)  # e.g., Sprinter
 
     def __hash__(self):
@@ -554,8 +550,6 @@ class Leg:
             to_station=self.to_stop.station.name,
             trip_hint=self.trip.hint,
             trip_long_name=self.trip.long_name,
-            from_platform_code=self.from_stop.platform_code,
-            to_platform_code=self.to_stop.platform_code,
             fare=self.fare,
         )
 
@@ -734,47 +728,62 @@ class Journey:
             else False
         )
 
-    def print(self, dep_secs=None):
+    def print(self) -> str:
         """Print the given journey to logger info"""
 
         logger.info("Journey:")
 
         if len(self) == 0:
             logger.info("No journey available")
-            return
+            return "No journey available"
 
+        msg = ""
         # Print all legs in journey
         for leg in self:
-            msg = (
+            msg += (
                 str(sec2str(leg.dep))
                 + " "
                 + leg.from_stop.station.name.ljust(20)
                 + "(p. "
-                + str(leg.from_stop.platform_code).rjust(3)
+                + str(leg.from_stop.name).rjust(3)
                 + ") TO "
                 + str(sec2str(leg.arr))
                 + " "
                 + leg.to_stop.station.name.ljust(20)
                 + "(p. "
-                + str(leg.to_stop.platform_code).rjust(3)
-                + ") WITH "
-                + str(leg.trip.hint)
+                + str(leg.to_stop.name).rjust(3)
+                + ") "
             )
-            logger.info(msg)
+            # logger.info(msg)
 
-        logger.info(f"Fare: €{self.fare()}")
-
-        msg = f"Duration: {sec2str(self.travel_time())}"
-        if dep_secs:
-            msg += " ({} from request time {})".format(
-                sec2str(self.arr() - dep_secs), sec2str(dep_secs),
-            )
-        logger.info(msg)
-        logger.info("")
+        # logger.info(f"Fare: €{self.fare()}")
+        msg += f"Duration: {sec2str(self.travel_time())} \n"
+        # logger.info(msg)
+        # logger.info("")
+        return msg
 
     def to_list(self) -> List[Dict]:
         """Convert journey to list of legs as dict"""
         return [leg.to_dict(leg_index=idx) for idx, leg in enumerate(self.legs)]
+    
+    def serialize(self) -> Dict:
+        """
+        Serialize the Journey object into a dictionary suitable for JSON.
+        This method replaces the previous one and makes the object JSON serializable.
+        """
+        if len(self.legs) == 0:
+            return {}
+        return {
+            "n_legs": len(self.legs),
+            "legs": self.to_list(), # Leverage existing to_list method for legs
+            "departure_time": self.dep(),
+            "arrival_time": self.arr(),
+            "travel_time_seconds": self.travel_time(),
+            "fare": self.fare(),
+            "number_of_trips": self.number_of_trips(),
+            "is_valid": self.is_valid(),
+        }
+
 
 def pareto_set(labels: List[Label], keep_equal=False):
     """

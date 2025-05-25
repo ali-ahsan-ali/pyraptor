@@ -30,14 +30,14 @@ def parse_arguments():
         "-or",
         "--origin",
         type=str,
-        default="Hertogenbosch ('s)",
+        default="207310",
         help="Origin station of the journey",
     )
     parser.add_argument(
         "-d",
         "--destination",
         type=str,
-        default="Rotterdam Centraal",
+        default="200060",
         help="Destination station of the journey",
     )
     parser.add_argument(
@@ -70,7 +70,6 @@ def main(
     logger.debug("Rounds              : {}", str(rounds))
 
     timetable = read_timetable(input_folder)
-
     logger.info(f"Calculating network from : {origin_station}")
 
     # Departure time seconds
@@ -118,7 +117,7 @@ def run_mcraptor(
     s = perf_counter()
 
     destination_stops = {
-        st.name: timetable.stations.get_stops(st.name) for st in timetable.stations
+        st.id: timetable.stations.get_stops(st.id) for st in timetable.stations
     }
     destination_stops.pop(origin_station, None)
 

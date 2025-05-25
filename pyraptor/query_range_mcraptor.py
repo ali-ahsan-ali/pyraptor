@@ -13,8 +13,8 @@ from pyraptor.model.mcraptor import (
     best_legs_to_destination_station,
     reconstruct_journeys,
 )
-from pyraptor.util import str2sec, sec2str
-
+from pyraptor.util import sec2str
+import json
 
 def parse_arguments():
     """Parse arguments"""
@@ -30,15 +30,8 @@ def parse_arguments():
         "-or",
         "--origin",
         type=str,
-        default="Hertogenbosch ('s)",
+        default="207310",
         help="Origin station of the journey",
-    )
-    parser.add_argument(
-        "-d",
-        "--destination",
-        type=str,
-        default="Rotterdam Centraal",
-        help="Destination station of the journey for logging purposes",
     )
     parser.add_argument(
         "-st",
@@ -69,49 +62,39 @@ def parse_arguments():
 def main(
     input_folder: str,
     origin_station: str,
-    destination_station: str,
-    departure_start_time: str,
-    departure_end_time: str,
     rounds: int,
 ):
     """Run RAPTOR algorithm"""
 
     logger.debug("Input directory      : {}", input_folder)
     logger.debug("Origin station       : {}", origin_station)
-    logger.debug("Destination station  : {}", destination_station)
-    logger.debug("Departure start time : {}", departure_start_time)
-    logger.debug("Departure end time   : {}", departure_end_time)
     logger.debug("Rounds               : {}", str(rounds))
 
     timetable = read_timetable(input_folder)
 
     logger.info(f"Calculating network from : {origin_station}")
 
-    # Departure time seconds for time range
-    dep_secs_min = str2sec(departure_start_time)
-    dep_secs_max = str2sec(departure_end_time)
-    logger.debug(f"Departure time range (s.)  : ({dep_secs_min}, {dep_secs_max})")
-
     # Find route between two stations for time range, i.e. Range Query
     journeys_to_destinations = run_range_mcraptor(
         timetable,
         origin_station,
-        dep_secs_min,
-        dep_secs_max,
         rounds,
     )
 
     # All destinations are calculated, however, we only print one for logging purposes
-    logger.info(f"Journeys to destination station '{destination_station}'")
-    for jrny in journeys_to_destinations[destination_station]:
-        jrny.print()
+    for destination_station in journeys_to_destinations.keys():
+        with open(f'data/output/optimal/{origin_station}_to_{destination_station}.json', 'w+') as f:
+            output = []
+            for jrny in journeys_to_destinations[destination_station]:
+                journey_dict = jrny.serialize()
+                output.append(journey_dict)
+            json_output = json.dumps(output, indent=4) 
+            f.write(json_output)
 
 
 def run_range_mcraptor(
     timetable: Timetable,
     origin_station: str,
-    dep_secs_min: int,
-    dep_secs_max: int,
     max_rounds: int,
 ) -> Dict[str, List[Journey]]:
     """
@@ -121,13 +104,13 @@ def run_range_mcraptor(
     # Get stops for origins and destinations
     from_stops = timetable.stations.get_stops(origin_station)
     destination_stops = {
-        st.name: timetable.stations.get_stops(st.name) for st in timetable.stations
+        st.name: timetable.stations.get_stops(st.id) for st in timetable.stations
     }
     destination_stops.pop(origin_station, None)
 
     # Find all trips leaving from stops within time range
     potential_trip_stop_times = timetable.trip_stop_times.get_trip_stop_times_in_range(
-        from_stops, dep_secs_min, dep_secs_max
+        from_stops
     )
     potential_dep_secs = sorted(
         list(set([tst.dts_dep for tst in potential_trip_stop_times])), reverse=True
@@ -145,7 +128,6 @@ def run_range_mcraptor(
 
     logger.info("Calculating journeys to all destinations")
     s = perf_counter()
-
     # Find Pareto-optimal journeys for all possible departure times
     for dep_index, dep_secs in enumerate(potential_dep_secs):
         logger.info(f"Processing {dep_index} / {len(potential_dep_secs)}")
@@ -190,8 +172,5 @@ if __name__ == "__main__":
     main(
         args.input,
         args.origin,
-        args.destination,
-        args.starttime,
-        args.endtime,
         args.rounds,
     )

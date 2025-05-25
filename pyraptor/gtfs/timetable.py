@@ -7,6 +7,7 @@ from collections import defaultdict
 
 import pandas as pd
 from loguru import logger
+import datetime
 
 from pyraptor.dao import write_timetable
 from pyraptor.util import mkdir_if_not_exists, str2sec, TRANSFER_COST
@@ -43,7 +44,7 @@ def parse_arguments():
         "-i",
         "--input",
         type=str,
-        default="data/input/NL-gtfs",
+        default="/home/ali/dev/gtfs",
         help="Input directory",
     )
     parser.add_argument(
@@ -54,9 +55,9 @@ def parse_arguments():
         help="Input directory",
     )
     parser.add_argument(
-        "-d", "--date", type=str, default="20210906", help="Departure date (yyyymmdd)"
+        "-d", "--date", type=str, default="20250403", help="Departure date (yyyymmdd)"
     )
-    parser.add_argument("-a", "--agencies", nargs="+", default=["NS"])
+    parser.add_argument("-a", "--agencies", nargs="+", default=["NSW Trains", "Sydney Trains", "Sydney Metro"])
     parser.add_argument("--icd", action="store_true", help="Add ICD fare(s)")
     arguments = parser.parse_args()
     return arguments
@@ -74,7 +75,18 @@ def main(
     logger.info("Parse timetable from GTFS files")
     mkdir_if_not_exists(output_folder)
 
-    gtfs_timetable = read_gtfs_timetable(input_folder, departure_date, agencies)
+    gtfs_timetable = None
+    for entry in os.scandir(input_folder):  
+        if entry.is_dir():
+            resulting_timetable = read_gtfs_timetable(entry.path, departure_date, agencies)
+            if gtfs_timetable == None:
+                gtfs_timetable = resulting_timetable
+            else: 
+                gtfs_timetable.stop_times = pd.concat([resulting_timetable.stop_times, gtfs_timetable.stop_times]).drop_duplicates().reset_index(drop=True)
+                gtfs_timetable.stops = pd.concat([resulting_timetable.stops, gtfs_timetable.stops]).drop_duplicates().reset_index(drop=True)
+                gtfs_timetable.trips = pd.concat([resulting_timetable.trips, gtfs_timetable.trips]).drop_duplicates().reset_index(drop=True)
+                gtfs_timetable.calendar = pd.concat([resulting_timetable.calendar, gtfs_timetable.calendar]).drop_duplicates().reset_index(drop=True)
+    
     timetable = gtfs_to_pyraptor_timetable(gtfs_timetable, icd_fix)
     write_timetable(output_folder, timetable)
 
@@ -114,23 +126,53 @@ def read_gtfs_timetable(
             "route_id",
             "service_id",
             "trip_id",
-            "trip_short_name",
-            "trip_long_name",
+            "trip_headsign"
         ]
     ]
-    trips["trip_short_name"] = trips["trip_short_name"].astype("Int64")
 
     # Read calendar
     logger.debug("Read Calendar")
 
     calendar = pd.read_csv(
-        os.path.join(input_folder, "calendar_dates.txt"), dtype={"date": str}
+    os.path.join(input_folder, "calendar.txt"), dtype={"date": str}
     )
     calendar = calendar[calendar.service_id.isin(trips.service_id.values)]
 
     # Add date to trips and filter on departure date
-    trips = trips.merge(calendar[["service_id", "date"]], on="service_id")
-    trips = trips[trips.date == departure_date]
+    trips = trips.merge(
+        calendar[["service_id", "start_date", "end_date", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]], 
+        on="service_id"
+    )
+    day_of_week = datetime.datetime.strptime(departure_date, "%Y%m%d").weekday()
+    departure_date_as_int = int(departure_date)
+    if day_of_week == 0:
+        trips = trips[trips.start_date <= departure_date_as_int]
+        trips = trips[trips.end_date >= departure_date_as_int]
+        trips = trips[trips.monday == 1]
+    elif day_of_week == 1:
+        trips = trips[trips.start_date <= departure_date_as_int]
+        trips = trips[trips.end_date >= departure_date_as_int]
+        trips = trips[trips.tuesday == 1]
+    elif day_of_week == 2:
+        trips = trips[trips.start_date <= departure_date_as_int]
+        trips = trips[trips.end_date >= departure_date_as_int]
+        trips = trips[trips.wednesday == 1]
+    elif day_of_week == 3:
+        trips = trips[trips.start_date <= departure_date_as_int]
+        trips = trips[trips.end_date >= departure_date_as_int]
+        trips = trips[trips.thursday == 1]
+    elif day_of_week == 4:
+        trips = trips[trips.start_date <= departure_date_as_int]
+        trips = trips[trips.end_date >= departure_date_as_int]
+        trips = trips[trips.friday == 1]
+    elif day_of_week == 5:
+        trips = trips[trips.start_date <= departure_date_as_int]
+        trips = trips[trips.end_date >= departure_date_as_int]
+        trips = trips[trips.saturday == 1]
+    elif day_of_week == 6:
+        trips = trips[trips.start_date <= departure_date_as_int]
+        trips = trips[trips.end_date >= departure_date_as_int]
+        trips = trips[trips.sunday == 1]
 
     # Read stop times
     logger.debug("Read Stop Times")
@@ -151,12 +193,11 @@ def read_gtfs_timetable(
     # Convert times to seconds
     stop_times["arrival_time"] = stop_times["arrival_time"].apply(str2sec)
     stop_times["departure_time"] = stop_times["departure_time"].apply(str2sec)
-
     # Read stops (platforms)
     logger.debug("Read Stops")
 
     stops_full = pd.read_csv(
-        os.path.join(input_folder, "stops.txt"), dtype={"stop_id": str}
+        os.path.join(input_folder, "stops.txt"), dtype={"stop_id": str, "parent_station": str}
     )
     stops = stops_full.loc[
         stops_full["stop_id"].isin(stop_times.stop_id.unique())
@@ -166,25 +207,19 @@ def read_gtfs_timetable(
     stopareas = stops["parent_station"].unique()
     # stops = stops.append(.copy())
     stops = pd.concat([stops, stops_full.loc[stops_full["stop_id"].isin(stopareas)]])
-
-    # stops["zone_id"] = stops["zone_id"].str.replace("IFF:", "").str.upper()
-    stops["stop_code"] = stops.stop_code.str.upper()
     stops = stops[
         [
             "stop_id",
             "stop_name",
-            "parent_station",
-            "platform_code",
+            "parent_station"
         ]
     ]
-
-    # Filter out the general station codes
-    stops = stops.loc[~stops.parent_station.isna()]
 
     gtfs_timetable = GtfsTimetable()
     gtfs_timetable.trips = trips
     gtfs_timetable.stop_times = stop_times
     gtfs_timetable.stops = stops
+    gtfs_timetable.calendar = calendar
 
     return gtfs_timetable
 
@@ -203,17 +238,22 @@ def gtfs_to_pyraptor_timetable(
     stations = Stations()
     stops = Stops()
 
-    gtfs_timetable.stops.platform_code = gtfs_timetable.stops.platform_code.fillna("?")
+    for s in gtfs_timetable.stops.itertuples():
+        if pd.isna(s.parent_station):
+            station = Station(s.stop_id, s.stop_name)
+            stations.add(station)
 
     for s in gtfs_timetable.stops.itertuples():
-        station = Station(s.stop_name, s.stop_name)
-        station = stations.add(station)
+        if not pd.isna(s.parent_station):
+            
+            station = next((station for station in stations if station.id == s.parent_station), None)
+            stop_id = f"{s.stop_name}"
+            stop = Stop(s.stop_id, stop_id, station)
+            
+            station.add_stop(stop)
+            stops.add(stop)
 
-        stop_id = f"{s.stop_name}-{s.platform_code}"
-        stop = Stop(s.stop_id, stop_id, station, s.platform_code)
 
-        station.add_stop(stop)
-        stops.add(stop)
 
     # Stop Times
     stop_times = defaultdict(list)
@@ -228,8 +268,7 @@ def gtfs_to_pyraptor_timetable(
 
     for trip_row in gtfs_timetable.trips.itertuples():
         trip = Trip()
-        trip.hint = trip_row.trip_short_name  # i.e. treinnummer
-        trip.long_name = trip_row.trip_long_name  # e.g., Sprinter
+        trip.long_name = trip_row.trip_headsign  # e.g., Sprinter
 
         # Iterate over stops
         sort_stop_times = sorted(
