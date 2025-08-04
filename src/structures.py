@@ -12,7 +12,7 @@ import attr
 import numpy as np
 from loguru import logger
 
-from pyraptor.util import sec2str
+from util import sec2str
 
 
 def same_type_and_id(first, second):

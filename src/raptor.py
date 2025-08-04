@@ -6,9 +6,9 @@ from copy import deepcopy
 
 from loguru import logger
 
-from pyraptor.dao.timetable import Timetable
-from pyraptor.model.structures import Stop, Trip, Route, Leg, Journey
-from pyraptor.util import LARGE_NUMBER, TRANSFER_TRIP
+from dao_timetable import Timetable
+from structures import Stop, Trip, Route, Leg, Journey
+from util import LARGE_NUMBER, TRANSFER_TRIP
 
 
 @dataclass

@@ -9,9 +9,9 @@ import pandas as pd
 from loguru import logger
 import datetime
 
-from pyraptor.dao import write_timetable
-from pyraptor.util import mkdir_if_not_exists, str2sec, TRANSFER_COST
-from pyraptor.model.structures import (
+from dao_timetable import write_timetable
+from util import mkdir_if_not_exists, str2sec, TRANSFER_COST
+from structures import (
     Timetable,
     Stop,
     Stops,
@@ -55,7 +55,7 @@ def parse_arguments():
         help="Input directory",
     )
     parser.add_argument(
-        "-d", "--date", type=str, default="20250403", help="Departure date (yyyymmdd)"
+        "-d", "--date", type=str, default="20250804", help="Departure date (yyyymmdd)"
     )
     parser.add_argument("-a", "--agencies", nargs="+", default=["NSW Trains", "Sydney Trains", "Sydney Metro"])
     parser.add_argument("--icd", action="store_true", help="Add ICD fare(s)")
@@ -86,7 +86,7 @@ def main(
                 gtfs_timetable.stops = pd.concat([resulting_timetable.stops, gtfs_timetable.stops]).drop_duplicates().reset_index(drop=True)
                 gtfs_timetable.trips = pd.concat([resulting_timetable.trips, gtfs_timetable.trips]).drop_duplicates().reset_index(drop=True)
                 gtfs_timetable.calendar = pd.concat([resulting_timetable.calendar, gtfs_timetable.calendar]).drop_duplicates().reset_index(drop=True)
-    
+
     timetable = gtfs_to_pyraptor_timetable(gtfs_timetable, icd_fix)
     write_timetable(output_folder, timetable)
 
@@ -133,9 +133,7 @@ def read_gtfs_timetable(
     # Read calendar
     logger.debug("Read Calendar")
 
-    calendar = pd.read_csv(
-    os.path.join(input_folder, "calendar.txt"), dtype={"date": str}
-    )
+    calendar = pd.read_csv(os.path.join(input_folder, "calendar.txt"), dtype={"date": str})
     calendar = calendar[calendar.service_id.isin(trips.service_id.values)]
 
     # Add date to trips and filter on departure date
@@ -174,6 +172,7 @@ def read_gtfs_timetable(
         trips = trips[trips.end_date >= departure_date_as_int]
         trips = trips[trips.sunday == 1]
 
+    print(trips)
     # Read stop times
     logger.debug("Read Stop Times")
 

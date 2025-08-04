@@ -4,7 +4,7 @@ from collections import defaultdict
 import pandas as pd
 from loguru import logger
 
-from pyraptor.model.structures import (
+from structures import (
     Timetable,
     Stop,
     Stops,
@@ -18,7 +18,7 @@ from pyraptor.model.structures import (
     Transfer,
     Transfers,
 )
-from pyraptor.util import TRANSFER_COST
+from util import TRANSFER_COST
 
 
 def to_stops_and_trips(df: pd.DataFrame):

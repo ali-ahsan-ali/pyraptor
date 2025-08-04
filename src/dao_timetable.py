@@ -5,8 +5,8 @@ from pathlib import Path
 from loguru import logger
 import joblib
 
-from pyraptor.model.structures import Timetable
-from pyraptor.util import mkdir_if_not_exists
+from structures import Timetable
+from util import mkdir_if_not_exists
 
 
 def read_timetable(input_folder: str) -> Timetable:

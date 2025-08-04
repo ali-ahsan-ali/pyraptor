@@ -1,19 +1,17 @@
 """Run query with RAPTOR algorithm"""
 import argparse
-from typing import List, Dict
-from copy import copy
-from time import perf_counter
+from typing import Dict
 
 from loguru import logger
 
-from pyraptor.dao.timetable import read_timetable
-from pyraptor.model.structures import Timetable, Journey, Station
-from pyraptor.model.mcraptor import (
-    McRaptorAlgorithm,
-    reconstruct_journeys,
-    best_legs_to_destination_station,
+from dao_timetable import read_timetable
+from structures import Journey, Station, Timetable
+from raptor import (
+    RaptorAlgorithm,
+    reconstruct_journey,
+    best_stop_at_target_station,
 )
-from pyraptor.util import str2sec
+from util import str2sec
 
 
 def parse_arguments():
@@ -30,14 +28,14 @@ def parse_arguments():
         "-or",
         "--origin",
         type=str,
-        default="207310",
+        default="Hertogenbosch ('s)",
         help="Origin station of the journey",
     )
     parser.add_argument(
         "-d",
         "--destination",
         type=str,
-        default="200060",
+        default="Rotterdam Centraal",
         help="Destination station of the journey",
     )
     parser.add_argument(
@@ -70,35 +68,33 @@ def main(
     logger.debug("Rounds              : {}", str(rounds))
 
     timetable = read_timetable(input_folder)
-    logger.info(f"Calculating network from : {origin_station}")
+
+    logger.info(f"Calculating network from: {origin_station}")
 
     # Departure time seconds
     dep_secs = str2sec(departure_time)
     logger.debug("Departure time (s.)  : " + str(dep_secs))
 
     # Find route between two stations
-    journeys_to_destinations = run_mcraptor(
+    journey_to_destinations = run_raptor(
         timetable,
         origin_station,
         dep_secs,
         rounds,
     )
 
-    # Output journey
-    journeys = journeys_to_destinations[destination_station]
-    if len(journeys) != 0:
-        for jrny in journeys:
-            jrny.print(dep_secs=dep_secs)
+    # Print journey to destination
+    journey_to_destinations[destination_station].print(dep_secs=dep_secs)
 
 
-def run_mcraptor(
+def run_raptor(
     timetable: Timetable,
     origin_station: str,
     dep_secs: int,
     rounds: int,
-) -> Dict[Station, List[Journey]]:
+) -> Dict[Station, Journey]:
     """
-    Perform the McRaptor algorithm.
+    Run the Raptor algorithm.
 
     :param timetable: timetable
     :param origin_station: Name of origin station
@@ -106,37 +102,27 @@ def run_mcraptor(
     :param rounds: Number of iterations to perform
     """
 
-    # Run Round-Based Algorithm for an origin station
+    # Get stops for origin and all destinations
     from_stops = timetable.stations.get(origin_station).stops
-    raptor = McRaptorAlgorithm(timetable)
-    bag_round_stop, actual_rounds = raptor.run(from_stops, dep_secs, rounds)
-    last_round_bag = copy(bag_round_stop[rounds])
-
-    # Calculate journets to all destinations
-    logger.info("Calculating journeys to all destinations")
-    s = perf_counter()
-
     destination_stops = {
-        st.id: timetable.stations.get_stops(st.id) for st in timetable.stations
+        st.name: timetable.stations.get_stops(st.name) for st in timetable.stations
     }
     destination_stops.pop(origin_station, None)
 
-    journeys_to_destinations = dict()
+    # Run Round-Based Algorithm
+    raptor = RaptorAlgorithm(timetable)
+    bag_round_stop = raptor.run(from_stops, dep_secs, rounds)
+    best_labels = bag_round_stop[rounds]
+
+    # Determine the best journey to all possible destination stations
+    journey_to_destinations = dict()
     for destination_station_name, to_stops in destination_stops.items():
-        destination_legs = best_legs_to_destination_station(to_stops, last_round_bag)
+        dest_stop = best_stop_at_target_station(to_stops, best_labels)
+        if dest_stop != 0:
+            journey = reconstruct_journey(dest_stop, best_labels)
+            journey_to_destinations[destination_station_name] = journey
 
-        if len(destination_legs) == 0:
-            logger.info("Destination unreachable with given parameters")
-            continue
-
-        journeys = reconstruct_journeys(
-            from_stops, destination_legs, bag_round_stop, k=rounds
-        )
-        journeys_to_destinations[destination_station_name] = journeys
-
-    logger.info(f"Journey calculation time: {perf_counter() - s}")
-
-    return journeys_to_destinations
+    return journey_to_destinations
 
 
 if __name__ == "__main__":

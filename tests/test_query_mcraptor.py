@@ -1,8 +1,8 @@
 """Test Query McRaptor"""
 from bdb import set_trace
 from pyraptor import query_mcraptor
-from pyraptor.model.mcraptor import pareto_set
-from pyraptor.model.structures import Stop, Label
+from mcraptor import pareto_set
+from structures import Stop, Label
 
 
 def test_run_mcraptor_with_transfers_and_fares(timetable_with_transfers_and_fares):
